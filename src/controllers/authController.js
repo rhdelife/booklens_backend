@@ -116,7 +116,7 @@ export const googleCallback = async (req, res, next) => {
       code,
       client_id: process.env.GOOGLE_CLIENT_ID,
       client_secret: process.env.GOOGLE_CLIENT_SECRET,
-      redirect_uri: process.env.GOOGLE_REDIRECT_URI || `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/auth/google/callback`,
+      redirect_uri: process.env.GOOGLE_REDIRECT_URI || process.env.GOOGLE_CALLBACK_URL || `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/auth/google/callback`,
       grant_type: 'authorization_code',
     })
 
@@ -165,8 +165,18 @@ export const googleCallback = async (req, res, next) => {
 
     res.redirect(redirectUrl)
   } catch (error) {
-    console.error('Google OAuth error:', error.response?.data || error.message)
-    next(error)
+    console.error('Google OAuth error:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+      redirect_uri: process.env.GOOGLE_REDIRECT_URI || process.env.GOOGLE_CALLBACK_URL || `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/auth/google/callback`,
+      client_id: process.env.GOOGLE_CLIENT_ID ? 'set' : 'missing',
+    })
+
+    // 에러를 프론트엔드로 리디렉션
+    const frontendUrl = process.env.CORS_ORIGIN || 'http://localhost:5173'
+    const errorMessage = error.response?.data?.error || error.message || 'OAuth authentication failed'
+    res.redirect(`${frontendUrl}/auth/google/callback?error=${encodeURIComponent(errorMessage)}`)
   }
 }
 
