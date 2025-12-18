@@ -23,6 +23,12 @@ export const startGoogleOAuth = async (req, res, next) => {
   try {
     const clientId = process.env.GOOGLE_CLIENT_ID
 
+    // 필수 환경 변수 확인
+    if (!clientId) {
+      const frontendUrl = process.env.CORS_ORIGIN || 'http://localhost:5173'
+      return res.redirect(`${frontendUrl}/auth/callback?error=config_error&message=Google OAuth client ID is not configured`)
+    }
+
     // redirect_uri 설정: 환경 변수 우선, 없으면 BACKEND_URL 기반으로 생성
     // OAuth 제공자에 등록된 정확한 URL과 일치해야 함
     const redirectUri = process.env.GOOGLE_REDIRECT_URI ||
@@ -219,10 +225,17 @@ export const googleCallback = async (req, res, next) => {
       process.env.GOOGLE_CALLBACK_URL ||
       `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/auth/google/callback`
 
+    // 필수 환경 변수 확인
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+      return res.redirect(`${frontendUrl}/auth/callback?error=config_error&message=Google OAuth credentials are not configured`)
+    }
+
     // redirect_uri 로깅 (디버깅용)
     if (process.env.NODE_ENV !== 'production') {
       console.log('Google OAuth callback redirect_uri:', redirectUri)
+      console.log('Google OAuth client_id:', process.env.GOOGLE_CLIENT_ID ? 'set' : 'missing')
     }
+
     const tokenResponse = await axios.post('https://oauth2.googleapis.com/token', {
       code,
       client_id: process.env.GOOGLE_CLIENT_ID,
@@ -247,20 +260,26 @@ export const googleCallback = async (req, res, next) => {
     }
 
     // 기존 사용자 확인 또는 생성
-    let user = await pool.query(
-      'SELECT id, email, name FROM users WHERE email = $1',
-      [email]
-    )
-
-    if (user.rows.length === 0) {
-      // 새 사용자 생성
-      const result = await pool.query(
-        'INSERT INTO users (email, name, password_hash) VALUES ($1, $2, $3) RETURNING id, email, name',
-        [email, name || email.split('@')[0], 'oauth_user'] // OAuth 사용자는 비밀번호 없음
+    let user
+    try {
+      const userResult = await pool.query(
+        'SELECT id, email, name FROM users WHERE email = $1',
+        [email]
       )
-      user = result.rows[0]
-    } else {
-      user = user.rows[0]
+
+      if (userResult.rows.length === 0) {
+        // 새 사용자 생성
+        const result = await pool.query(
+          'INSERT INTO users (email, name, password_hash) VALUES ($1, $2, $3) RETURNING id, email, name',
+          [email, name || email.split('@')[0], 'oauth_user'] // OAuth 사용자는 비밀번호 없음
+        )
+        user = result.rows[0]
+      } else {
+        user = userResult.rows[0]
+      }
+    } catch (dbError) {
+      console.error('Database error in OAuth callback:', dbError)
+      return res.redirect(`${frontendUrl}/auth/callback?error=db_error&message=Database connection failed. Please check your database settings.`)
     }
 
     // 토큰 생성

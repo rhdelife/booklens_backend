@@ -1,8 +1,22 @@
 node_modules/
 .env
+.env.local
+.env.*.local
 dist/
 *.log
 .DS_Store
+
+# 백업 파일
+*.bak
+*.bak2
+*.bak3
+*.bak4
+*.bak5
+
+# 테스트 파일
+test-*.js
+test-*.sh
+fix-*.js
 
 
 
