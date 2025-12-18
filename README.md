@@ -38,6 +38,15 @@ GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
 NAVER_CLIENT_ID=your_naver_client_id
 NAVER_CLIENT_SECRET=your_naver_client_secret
+
+# OAuth Redirect URI (선택사항, BACKEND_URL이 설정되면 자동 생성)
+# 명시적으로 설정하려면 아래 변수 사용
+# GOOGLE_REDIRECT_URI=https://booklens-server.onrender.com/api/auth/google/callback
+# NAVER_REDIRECT_URI=https://booklens-server.onrender.com/api/auth/naver/callback
+
+# Render 배포 시 필수 설정
+BACKEND_URL=https://booklens-server.onrender.com
+CORS_ORIGIN=https://your-frontend.onrender.com
 ```
 
 ### 3. 데이터베이스 설정
@@ -125,17 +134,45 @@ Authorization: Bearer <your_token>
 
 ### 구글 OAuth
 
+#### 개발 환경
 1. [Google Cloud Console](https://console.cloud.google.com/)에서 프로젝트 생성
 2. OAuth 클라이언트 ID 생성
-3. 리디렉션 URI 추가: `http://localhost:5173/auth/google/callback`
+3. 리디렉션 URI 추가: `http://localhost:3000/api/auth/google/callback`
 4. `.env` 파일에 `GOOGLE_CLIENT_ID`와 `GOOGLE_CLIENT_SECRET` 설정
+
+#### 프로덕션 환경 (Render)
+1. Google Cloud Console에서 OAuth 클라이언트 ID 생성
+2. **리디렉션 URI 추가: `https://booklens-server.onrender.com/api/auth/google/callback`** ⚠️ 중요!
+3. Render 환경 변수 설정:
+   - `GOOGLE_CLIENT_ID`
+   - `GOOGLE_CLIENT_SECRET`
+   - `BACKEND_URL=https://booklens-server.onrender.com`
+   - `GOOGLE_REDIRECT_URI=https://booklens-server.onrender.com/api/auth/google/callback` (선택사항, BACKEND_URL로 자동 생성됨)
 
 ### 네이버 OAuth
 
+#### 개발 환경
 1. [네이버 개발자 센터](https://developers.naver.com/)에서 애플리케이션 등록
 2. 네이버 로그인 API 선택
-3. Callback URL 설정: `http://localhost:5173/auth/naver/callback`
+3. Callback URL 설정: `http://localhost:3000/api/auth/naver/callback`
 4. `.env` 파일에 `NAVER_CLIENT_ID`와 `NAVER_CLIENT_SECRET` 설정
+
+#### 프로덕션 환경 (Render)
+1. 네이버 개발자 센터에서 애플리케이션 등록
+2. **Callback URL 설정: `https://booklens-server.onrender.com/api/auth/naver/callback`** ⚠️ 중요!
+3. Render 환경 변수 설정:
+   - `NAVER_CLIENT_ID`
+   - `NAVER_CLIENT_SECRET`
+   - `BACKEND_URL=https://booklens-server.onrender.com`
+   - `NAVER_REDIRECT_URI=https://booklens-server.onrender.com/api/auth/naver/callback` (선택사항, BACKEND_URL로 자동 생성됨)
+
+### ⚠️ 중요: OAuth Redirect URI 설정
+
+OAuth 제공자(구글, 네이버)에 등록된 **리디렉션 URI는 백엔드 서버의 콜백 URL**이어야 합니다:
+- ✅ 올바른 예: `https://booklens-server.onrender.com/api/auth/google/callback`
+- ❌ 잘못된 예: `https://your-frontend.onrender.com/auth/google/callback`
+
+프론트엔드는 백엔드의 OAuth 시작 엔드포인트(`/api/auth/google`)로 리다이렉트하고, 백엔드가 OAuth 제공자로 리다이렉트합니다.
 
 ## 📁 프로젝트 구조
 

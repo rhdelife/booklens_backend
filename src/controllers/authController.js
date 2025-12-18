@@ -22,12 +22,20 @@ const generateState = () => {
 export const startGoogleOAuth = async (req, res, next) => {
   try {
     const clientId = process.env.GOOGLE_CLIENT_ID
-    // redirect_uri 일관성 확보: 환경 변수 우선 사용
+
+    // redirect_uri 설정: 환경 변수 우선, 없으면 BACKEND_URL 기반으로 생성
+    // OAuth 제공자에 등록된 정확한 URL과 일치해야 함
     const redirectUri = process.env.GOOGLE_REDIRECT_URI ||
       process.env.GOOGLE_CALLBACK_URL ||
       `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/auth/google/callback`
+
     const frontendUrl = process.env.CORS_ORIGIN || 'http://localhost:5173'
     const state = generateState()
+
+    // redirect_uri 로깅 (디버깅용)
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('Google OAuth redirect_uri:', redirectUri)
+    }
 
     // state를 세션에 저장 (실제로는 Redis나 세션 스토어 사용 권장)
     // 여기서는 간단하게 쿠키에 저장
@@ -59,8 +67,19 @@ export const startGoogleOAuth = async (req, res, next) => {
 export const startNaverOAuth = async (req, res, next) => {
   try {
     const clientId = process.env.NAVER_CLIENT_ID
-    const redirectUri = `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/auth/naver/callback`
+
+    // redirect_uri 설정: 환경 변수 우선, 없으면 BACKEND_URL 기반으로 생성
+    // 네이버 개발자 센터에 등록된 정확한 URL과 일치해야 함
+    const redirectUri = process.env.NAVER_REDIRECT_URI ||
+      process.env.NAVER_CALLBACK_URL ||
+      `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/auth/naver/callback`
+
     const state = generateState()
+
+    // redirect_uri 로깅 (디버깅용)
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('Naver OAuth redirect_uri:', redirectUri)
+    }
 
     // state를 쿠키에 저장
     res.cookie('oauth_state', state, {
@@ -194,10 +213,16 @@ export const googleCallback = async (req, res, next) => {
     }
 
     // 구글에서 액세스 토큰 교환
-    // redirect_uri는 startGoogleOAuth에서 사용한 것과 동일해야 함
+    // redirect_uri는 startGoogleOAuth에서 사용한 것과 정확히 동일해야 함
+    // OAuth 제공자에 등록된 URL과 일치해야 함
     const redirectUri = process.env.GOOGLE_REDIRECT_URI ||
       process.env.GOOGLE_CALLBACK_URL ||
       `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/auth/google/callback`
+
+    // redirect_uri 로깅 (디버깅용)
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('Google OAuth callback redirect_uri:', redirectUri)
+    }
     const tokenResponse = await axios.post('https://oauth2.googleapis.com/token', {
       code,
       client_id: process.env.GOOGLE_CLIENT_ID,
