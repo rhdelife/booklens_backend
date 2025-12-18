@@ -2,6 +2,7 @@ import pool from '../config/database.js'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import axios from 'axios'
+import crypto from 'crypto'
 
 // JWT 토큰 생성
 const generateToken = (userId) => {
@@ -10,6 +11,77 @@ const generateToken = (userId) => {
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
   )
+}
+
+// CSRF 방지를 위한 state 생성
+const generateState = () => {
+  return crypto.randomBytes(32).toString('hex')
+}
+
+// 구글 OAuth 시작
+export const startGoogleOAuth = async (req, res, next) => {
+  try {
+    const clientId = process.env.GOOGLE_CLIENT_ID
+    // redirect_uri 일관성 확보: 환경 변수 우선 사용
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI ||
+      process.env.GOOGLE_CALLBACK_URL ||
+      `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/auth/google/callback`
+    const frontendUrl = process.env.CORS_ORIGIN || 'http://localhost:5173'
+    const state = generateState()
+
+    // state를 세션에 저장 (실제로는 Redis나 세션 스토어 사용 권장)
+    // 여기서는 간단하게 쿠키에 저장
+    res.cookie('oauth_state', state, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 600000 // 10분
+    })
+
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: 'openid email profile',
+      state: state,
+      access_type: 'offline',
+      prompt: 'consent',
+    })
+
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
+    res.redirect(authUrl)
+  } catch (error) {
+    next(error)
+  }
+}
+
+// 네이버 OAuth 시작
+export const startNaverOAuth = async (req, res, next) => {
+  try {
+    const clientId = process.env.NAVER_CLIENT_ID
+    const redirectUri = `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/auth/naver/callback`
+    const state = generateState()
+
+    // state를 쿠키에 저장
+    res.cookie('oauth_state', state, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 600000 // 10분
+    })
+
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      state: state,
+    })
+
+    const authUrl = `https://nid.naver.com/oauth2.0/authorize?${params.toString()}`
+    res.redirect(authUrl)
+  } catch (error) {
+    next(error)
+  }
 }
 
 // 로그인
@@ -105,18 +177,32 @@ export const signup = async (req, res, next) => {
 // 구글 OAuth 콜백
 export const googleCallback = async (req, res, next) => {
   try {
-    const { code, state } = req.query // GET 요청이므로 query에서 받음
+    const { code, state } = req.query
+    const savedState = req.cookies?.oauth_state
+    const frontendUrl = process.env.CORS_ORIGIN || 'http://localhost:5173'
+
+    // state 검증
+    if (!savedState || savedState !== state) {
+      return res.redirect(`${frontendUrl}/auth/callback?error=invalid_state&message=Invalid state parameter`)
+    }
+
+    // 쿠키 삭제
+    res.clearCookie('oauth_state')
 
     if (!code) {
-      return res.status(400).json({ error: 'Authorization code is required' })
+      return res.redirect(`${frontendUrl}/auth/callback?error=no_code&message=Authorization code is required`)
     }
 
     // 구글에서 액세스 토큰 교환
+    // redirect_uri는 startGoogleOAuth에서 사용한 것과 동일해야 함
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI ||
+      process.env.GOOGLE_CALLBACK_URL ||
+      `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/auth/google/callback`
     const tokenResponse = await axios.post('https://oauth2.googleapis.com/token', {
       code,
       client_id: process.env.GOOGLE_CLIENT_ID,
       client_secret: process.env.GOOGLE_CLIENT_SECRET,
-      redirect_uri: process.env.GOOGLE_REDIRECT_URI || process.env.GOOGLE_CALLBACK_URL || `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/auth/google/callback`,
+      redirect_uri: redirectUri,
       grant_type: 'authorization_code',
     })
 
@@ -132,7 +218,7 @@ export const googleCallback = async (req, res, next) => {
     const { id: googleId, email, name, picture } = userResponse.data
 
     if (!email) {
-      return res.status(400).json({ error: 'Email not provided by Google' })
+      return res.redirect(`${frontendUrl}/auth/callback?error=no_email&message=Email not provided by Google`)
     }
 
     // 기존 사용자 확인 또는 생성
@@ -155,38 +241,50 @@ export const googleCallback = async (req, res, next) => {
     // 토큰 생성
     const token = generateToken(user.id)
 
-    // 프론트엔드로 리디렉션 (토큰과 사용자 정보를 URL 파라미터로 전달)
-    const frontendUrl = process.env.CORS_ORIGIN || 'http://localhost:5173'
-    const redirectUrl = `${frontendUrl}/auth/google/callback?token=${token}&user=${encodeURIComponent(JSON.stringify({
+    // 프론트엔드로 리다이렉트 (토큰과 사용자 정보 포함)
+    // 프론트엔드에서 URL 파라미터로 받아서 처리
+    const userData = encodeURIComponent(JSON.stringify({
       id: user.id,
       email: user.email,
       name: user.name,
-    }))}`
-
-    res.redirect(redirectUrl)
+    }))
+    res.redirect(`${frontendUrl}/auth/callback?token=${token}&user=${userData}`)
   } catch (error) {
-    console.error('Google OAuth error:', {
+    // 상세한 에러 로깅 (참고 저장소 방식)
+    const errorDetails = {
       message: error.message,
       response: error.response?.data,
       status: error.response?.status,
-      redirect_uri: process.env.GOOGLE_REDIRECT_URI || process.env.GOOGLE_CALLBACK_URL || `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/auth/google/callback`,
+      redirect_uri: process.env.GOOGLE_REDIRECT_URI ||
+        process.env.GOOGLE_CALLBACK_URL ||
+        `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/auth/google/callback`,
       client_id: process.env.GOOGLE_CLIENT_ID ? 'set' : 'missing',
-    })
+    }
+    console.error('Google OAuth error:', errorDetails)
 
-    // 에러를 프론트엔드로 리디렉션
     const frontendUrl = process.env.CORS_ORIGIN || 'http://localhost:5173'
-    const errorMessage = error.response?.data?.error || error.message || 'OAuth authentication failed'
-    res.redirect(`${frontendUrl}/auth/google/callback?error=${encodeURIComponent(errorMessage)}`)
+    const errorMessage = encodeURIComponent(error.response?.data?.error || error.message || 'OAuth 인증에 실패했습니다.')
+    res.redirect(`${frontendUrl}/auth/callback?error=oauth_failed&message=${errorMessage}`)
   }
 }
 
 // 네이버 OAuth 콜백
 export const naverCallback = async (req, res, next) => {
   try {
-    const { code, state } = req.body
+    const { code, state } = req.query
+    const savedState = req.cookies?.oauth_state
+    const frontendUrl = process.env.CORS_ORIGIN || 'http://localhost:5173'
+
+    // state 검증
+    if (!savedState || savedState !== state) {
+      return res.redirect(`${frontendUrl}/auth/callback?error=invalid_state&message=Invalid state parameter`)
+    }
+
+    // 쿠키 삭제
+    res.clearCookie('oauth_state')
 
     if (!code) {
-      return res.status(400).json({ error: 'Authorization code is required' })
+      return res.redirect(`${frontendUrl}/auth/callback?error=no_code&message=Authorization code is required`)
     }
 
     // 네이버에서 액세스 토큰 교환
@@ -216,7 +314,7 @@ export const naverCallback = async (req, res, next) => {
     const { id: naverId, email, name, nickname } = userResponse.data.response
 
     if (!email) {
-      return res.status(400).json({ error: 'Email not provided by Naver' })
+      return res.redirect(`${frontendUrl}/auth/callback?error=no_email&message=Email not provided by Naver`)
     }
 
     // 기존 사용자 확인 또는 생성
@@ -239,17 +337,13 @@ export const naverCallback = async (req, res, next) => {
     // 토큰 생성
     const token = generateToken(user.id)
 
-    res.json({
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-      },
-      token,
-    })
+    // 프론트엔드로 리다이렉트 (토큰 포함)
+    res.redirect(`${frontendUrl}/auth/callback?token=${token}`)
   } catch (error) {
     console.error('Naver OAuth error:', error.response?.data || error.message)
-    next(error)
+    const frontendUrl = process.env.CORS_ORIGIN || 'http://localhost:5173'
+    const errorMessage = encodeURIComponent(error.response?.data?.error || error.message || 'OAuth 인증에 실패했습니다.')
+    res.redirect(`${frontendUrl}/auth/callback?error=oauth_failed&message=${errorMessage}`)
   }
 }
 

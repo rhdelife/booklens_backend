@@ -1,6 +1,7 @@
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
+import cookieParser from 'cookie-parser'
 import authRoutes from './routes/authRoutes.js'
 import bookRoutes from './routes/bookRoutes.js'
 import postingRoutes from './routes/postingRoutes.js'
@@ -15,8 +16,11 @@ const PORT = process.env.PORT || 3000
 // 미들웨어
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }))
+app.use(cookieParser())
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 

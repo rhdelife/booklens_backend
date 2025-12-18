@@ -2,6 +2,8 @@ import express from 'express'
 import {
   login,
   signup,
+  startGoogleOAuth,
+  startNaverOAuth,
   googleCallback,
   naverCallback,
   getCurrentUser,
@@ -21,7 +23,11 @@ router.get('/me', authenticate, getCurrentUser)
 router.put('/profile', authenticate, updateProfile)
 router.post('/profile/image', authenticate, uploadProfileImage)
 
-// OAuth 인증
+// OAuth 인증 시작
+router.get('/google', startGoogleOAuth)
+router.get('/naver', startNaverOAuth)
+
+// OAuth 콜백 (GET으로 변경 - OAuth 제공자가 GET으로 리다이렉트)
 router.get('/google/callback', googleCallback)
 router.get('/naver/callback', naverCallback)
 
