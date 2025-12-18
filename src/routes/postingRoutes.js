@@ -21,3 +21,5 @@ router.delete('/:id', deletePosting)
 
 export default router
 
+
+

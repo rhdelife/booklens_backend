@@ -105,7 +105,7 @@ export const signup = async (req, res, next) => {
 // 구글 OAuth 콜백
 export const googleCallback = async (req, res, next) => {
   try {
-    const { code, state } = req.body
+    const { code, state } = req.query // GET 요청이므로 query에서 받음
 
     if (!code) {
       return res.status(400).json({ error: 'Authorization code is required' })
@@ -116,7 +116,7 @@ export const googleCallback = async (req, res, next) => {
       code,
       client_id: process.env.GOOGLE_CLIENT_ID,
       client_secret: process.env.GOOGLE_CLIENT_SECRET,
-      redirect_uri: `${process.env.CORS_ORIGIN || 'http://localhost:5173'}/auth/google/callback`,
+      redirect_uri: process.env.GOOGLE_REDIRECT_URI || `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/auth/google/callback`,
       grant_type: 'authorization_code',
     })
 
@@ -155,14 +155,15 @@ export const googleCallback = async (req, res, next) => {
     // 토큰 생성
     const token = generateToken(user.id)
 
-    res.json({
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-      },
-      token,
-    })
+    // 프론트엔드로 리디렉션 (토큰과 사용자 정보를 URL 파라미터로 전달)
+    const frontendUrl = process.env.CORS_ORIGIN || 'http://localhost:5173'
+    const redirectUrl = `${frontendUrl}/auth/google/callback?token=${token}&user=${encodeURIComponent(JSON.stringify({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+    }))}`
+
+    res.redirect(redirectUrl)
   } catch (error) {
     console.error('Google OAuth error:', error.response?.data || error.message)
     next(error)
@@ -356,7 +357,7 @@ export const uploadProfileImage = async (req, res, next) => {
       return res.status(404).json({ error: 'User not found' })
     }
 
-    res.json({ 
+    res.json({
       user: result.rows[0],
       message: 'Profile image uploaded successfully'
     })

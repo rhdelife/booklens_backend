@@ -22,8 +22,8 @@ router.put('/profile', authenticate, updateProfile)
 router.post('/profile/image', authenticate, uploadProfileImage)
 
 // OAuth 인증
-router.post('/google/callback', googleCallback)
-router.post('/naver/callback', naverCallback)
+router.get('/google/callback', googleCallback)
+router.get('/naver/callback', naverCallback)
 
 export default router
 
